@@ -144,6 +144,12 @@ var _over_list: MenuList
 var _board: SettingsMenu                  ## settings / credits board over the menu, null when closed
 var _splash: Control
 var _chimed := false
+var _touch := false                       ## phone menus: tap to start / ride again + corner icons, no lists
+var _icons: MenuIcons                     ## touch: corner icon buttons (screen corners, not the 1280 frame)
+var _tap_prompt: Label                    ## touch: "TAP TO START" / "TAP TO RIDE AGAIN" (blinks)
+var _over_tap: Label
+var _board_shut := -10.0                  ## _clock when the board last closed: its BACK tap mustn't start
+var _tapped := false                      ## touch game over: a tap already chose
 
 
 static func kid_texture(blink: bool) -> ImageTexture:
@@ -155,7 +161,9 @@ static func kid_texture(blink: bool) -> ImageTexture:
 
 func _ready() -> void:
 	layer = 20
+	var off := roundf(View.extra() / 4.0) * 2.0   # wide screens: the 1280 layout sits centred (even px)
 	_root = Node2D.new()
+	_root.position.x = off
 	_root.modulate = TimeOfDay.tint()
 	add_child(_root)
 	_ext = Node2D.new()
@@ -165,13 +173,22 @@ func _ready() -> void:
 	_ext.add_child(_car)
 	_interior = Interior.new()
 	_root.add_child(_interior)
+	_touch = TouchControls.enabled
 	_build_ui()
+	_ui.position.x = off
+	if _touch:
+		_icons = MenuIcons.new()
+		_icons.cabin = self
+		_icons.size = View.size()
+		_icons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_icons)
 	_fade = ColorRect.new()
 	_fade.color = Color(0, 0, 0, 0)
-	_fade.size = VIEW
+	_fade.size = View.size()
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_fade)
 	_build_splash()
+	_splash.position.x = off
 
 	if quick_start:
 		quick_start = false
@@ -244,6 +261,12 @@ func step(delta: float) -> void:
 		State.ZOOM_OUT:
 			if _t >= ZOOM_OUT_TIME:
 				_enter(State.GAME_OVER)
+		State.MENU:
+			if _touch and go and _menu_ready():         # phone with a pad / keyboard: any press starts
+				_on_play()
+		State.GAME_OVER:
+			if _touch and go and _t > INPUT_DELAY:
+				_ride_again()
 	_layout()
 	_sound()
 
@@ -251,8 +274,9 @@ func step(delta: float) -> void:
 func _enter(s: State) -> void:
 	state = s
 	_t = 0.0
-	_menu_list.active = s == State.MENU
-	_over_list.active = s == State.GAME_OVER
+	_menu_list.active = s == State.MENU and not _touch
+	_over_list.active = s == State.GAME_OVER and not _touch
+	_tapped = false
 	if s == State.MENU:
 		_menu_list.select(0)
 	if s == State.GAME_OVER:
@@ -328,6 +352,13 @@ func _layout() -> void:
 			_ui.modulate.a = 0.0
 	if state == State.GAME_OVER:
 		_layout_score()
+	if _touch:
+		var blink := 1.0 if fmod(_clock, 1.2) < 0.85 else 0.25
+		_tap_prompt.modulate.a = blink
+		_over_tap.modulate.a = blink if state == State.GAME_OVER and _t > INPUT_DELAY else 0.0
+		_icons.visible = (state == State.MENU and _board == null) or state == State.GAME_OVER
+		_icons.modulate.a = _ui.modulate.a
+		_icons.queue_redraw()
 
 
 ## Game-over score: counts up (ease-out), then punches in; gently pulses gold <-> white after.
@@ -400,12 +431,19 @@ func _build_ui() -> void:
 	_menu_list.add_item("PLAY", _on_play)
 	_menu_list.add_item("SETTINGS", _open_board.bind(SettingsMenu.Page.SETTINGS))
 	_menu_list.add_item("CREDITS", _open_board.bind(SettingsMenu.Page.CREDITS))
-	if not OS.has_feature("web"):
+	if not OS.has_feature("web") and not OS.has_feature("mobile"):
 		_menu_list.add_item("QUIT", func() -> void: get_tree().quit())
 	_menu.add_child(_menu_list)
-	var controls := _label(_menu, "SPACE  JUMP (x2)   J  SLICE\nS      DROP       R  RADIO\nESC    PAUSE      M  MUTE",
-		16, TEXT, Vector2(win.position.x + win.size.x / 2.0 - 27 * 8, 574), 0.0)   # 27 monospaced 16 px glyphs, centred
-	controls.add_theme_constant_override("line_spacing", 8)
+	if _touch:                                        # phones: tap anywhere; settings is a corner icon (credits inside it)
+		_menu_list.visible = false
+		_menu.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tap_prompt = _label(_menu, "TAP TO START", 24, TEXT, Vector2(win.position.x, 360), win.size.x)
+	else:
+		var keys := "SPACE  JUMP (x2)   J  SLICE\nS      DROP       R  RADIO\nESC    PAUSE      M  MUTE"
+		var cols := keys.split("\n")[0].length()
+		var controls := _label(_menu, keys, 16, TEXT,
+			Vector2(win.position.x + win.size.x / 2.0 - cols * 8, 574), 0.0)   # monospaced 16 px glyphs, centred
+		controls.add_theme_constant_override("line_spacing", 8)
 
 	_over = Control.new()
 	_ui.add_child(_over)
@@ -440,6 +478,9 @@ func _build_ui() -> void:
 	_over_list.add_item("RIDE AGAIN", func() -> void: restart_requested.emit())
 	_over_list.add_item("MAIN MENU", func() -> void: menu_requested.emit())
 	_over.add_child(_over_list)
+	_over_tap = _label(_over, "TAP TO RIDE AGAIN", 16, TEXT, Vector2(x, 452), w)
+	_over_tap.visible = _touch
+	_over_list.visible = not _touch
 
 	# NEW BEST! badge straddling the board's top edge
 	_over_best = Control.new()
@@ -488,7 +529,75 @@ func _close_board() -> void:
 	if _board:
 		_board.queue_free()
 		_board = null
-	_menu_list.active = state == State.MENU
+	_board_shut = _clock
+	_menu_list.active = state == State.MENU and not _touch
+
+
+## Touch menus: the start menu waits for its fade-in, and the board's closing tap mustn't fall through to PLAY.
+func _menu_ready() -> bool:
+	return state == State.MENU and _board == null and _t > INPUT_DELAY \
+		and _clock - _board_shut > INPUT_DELAY
+
+
+func _ride_again() -> void:
+	if _tapped:
+		return
+	_tapped = true
+	Sound.play("confirm", Sound.note(0), -4.0, 0.0, 0.0, "Ui")
+	restart_requested.emit()
+
+
+## Phone menus. MENU: the gear icon opens SETTINGS (CREDITS is a page inside it), a tap anywhere else starts. GAME_OVER: the home
+## icon goes to the main menu, anywhere else rides again.
+func _input(event: InputEvent) -> void:
+	if not _touch or not event is InputEventScreenTouch or not (event as InputEventScreenTouch).pressed:
+		return
+	if get_tree().paused:
+		return
+	var p := (event as InputEventScreenTouch).position
+	var icon := _icons.icon_at(p)
+	if state == State.MENU and _menu_ready():
+		get_viewport().set_input_as_handled()
+		if icon == "settings":
+			Sound.play("confirm", Sound.note(2), -4.0, 0.0, 0.0, "Ui")
+			_open_board(SettingsMenu.Page.SETTINGS)
+		else:
+			_on_play()
+	elif state == State.GAME_OVER and _t > INPUT_DELAY and not _tapped:
+		get_viewport().set_input_as_handled()
+		if icon == "home":
+			_tapped = true
+			Sound.play("confirm", Sound.note(0), -4.0, 0.0, 0.0, "Ui")
+			menu_requested.emit()
+		else:
+			_ride_again()
+
+
+## Phone menu icon buttons in the real screen corners (TouchControls.draw_button, solid style): the settings
+## gear (top-right, pixel glyph `TouchControls.ICONS.settings`) on the start menu, home (top-left) on game over.
+class MenuIcons extends Control:
+	const BTN := 96.0
+	const MARGIN := 24.0
+	var cabin: Cabin
+
+	func rects() -> Dictionary:
+		if cabin.state == Cabin.State.GAME_OVER:
+			return {"home": Rect2(Vector2(MARGIN, MARGIN), Vector2(BTN, BTN))}
+		return {"settings": Rect2(Vector2(View.w() - MARGIN - BTN, MARGIN), Vector2(BTN, BTN))}
+
+	func icon_at(p: Vector2) -> String:
+		if not visible:
+			return ""
+		var r := rects()
+		for k in r:
+			if (r[k] as Rect2).grow(16.0).has_point(p):
+				return k
+		return ""
+
+	func _draw() -> void:
+		var r := rects()
+		for k in r:
+			TouchControls.draw_button(self, r[k], k, false, true)
 
 
 ## Pixel-font label; width > 0 centres it in [x, x + width].
@@ -816,9 +925,9 @@ class Interior extends Node2D:
 		# window seal
 		draw_polyline(lip, K, 8.0)
 		# rear seat behind the kid: pleated seat back lit from the window, low headrest on chrome posts
-		_pad(rounded([Vector2(-80, 468), Vector2(236, 468), Vector2(240, 800), Vector2(-80, 800)],
+		_pad(rounded([Vector2(-400, 468), Vector2(236, 468), Vector2(240, 800), Vector2(-400, 800)],
 			[0, 48, 0, 0]), FABRIC, FLECK, false, 640.0)
-		_seam(Vector2(-80, 512), Vector2(196, 512))                                   # top roll
+		_seam(Vector2(-400, 512), Vector2(196, 512))                                   # top roll
 		for px in [28.0, 84.0, 140.0]:                                                # pleat channels
 			_seam(Vector2(px, 520), Vector2(px, 800))
 		_seam(Vector2(196, 488), Vector2(196, 800), false, -1.0)                      # side bolster
@@ -841,10 +950,10 @@ class Interior extends Node2D:
 		draw_rect(Rect2(anchor - Vector2(12, 16), Vector2(24, 32)), Color(0.45, 0.45, 0.5))
 		# front seat seen from behind, on the right in front of the window corner: seat back with side
 		# bolster and map pocket, headrest on its post
-		_pad(rounded([Vector2(1132, 536), Vector2(1400, 536), Vector2(1400, 800), Vector2(1132, 800)],
+		_pad(rounded([Vector2(1132, 536), Vector2(1760, 536), Vector2(1760, 800), Vector2(1132, 800)],
 			[56, 0, 0, 0]), FABRIC, FLECK, true, 700.0)
 		_seam(Vector2(1176, 584), Vector2(1176, 800), false, -1.0)                    # side bolster
-		_seam(Vector2(1180, 584), Vector2(1400, 584))                                 # top panel
+		_seam(Vector2(1180, 584), Vector2(1760, 584))                                 # top panel
 		_pad(rounded([Vector2(1196, 640), Vector2(1400, 640), Vector2(1400, 800), Vector2(1196, 800)],
 			[12, 0, 0, 0]), POCKET, POCKET_FLECK, true, INF, FLECK)                   # map pocket
 		_seam(Vector2(1200, 652), Vector2(1400, 652))                                 # elastic band

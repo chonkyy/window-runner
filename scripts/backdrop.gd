@@ -7,7 +7,7 @@ extends CanvasLayer
 ## fades in over the old one (only the one or two sets in use exist). Layer chunks draw once (static canvas
 ## items) and are recycled as the camera moves. All art on the 4 px backdrop grid (PX).
 
-const VIEW := Vector2(1280, 720)
+static var VIEW := View.BASE                ## screen size, set in _ready (wide phones: View.w() > 1280)
 const GROUND_Y := 612.0                   ## layer bases (hidden behind the sidewalk)
 const PX := 4.0                           ## backdrop "pixel" size
 
@@ -44,6 +44,7 @@ static func wet(c: Color, rain: float) -> Color:
 
 
 func _ready() -> void:
+	VIEW = View.size()
 	layer = -10
 	var p := TimeOfDay.p()
 	var rain := Weather.rain
@@ -61,7 +62,7 @@ func _ready() -> void:
 	tex.height = 256
 	sky.texture = tex
 	sky.stretch_mode = TextureRect.STRETCH_SCALE
-	sky.size = VIEW
+	sky.size = Backdrop.VIEW
 	add_child(sky)
 
 	var sky_fx := SkyFx.new()
@@ -151,13 +152,13 @@ class SkyFx extends Node2D:
 		rng.seed = 99
 		var stars: float = preset.stars * (1.0 - rain)
 		for i in int(160 * stars):
-			var pos := Vector2(rng.randf() * VIEW.x, rng.randf() * VIEW.y * 0.6).snapped(Vector2(2, 2))
+			var pos := Vector2(rng.randf() * Backdrop.VIEW.x, rng.randf() * Backdrop.VIEW.y * 0.6).snapped(Vector2(2, 2))
 			var a := rng.randf_range(0.3, 1.0) * stars
 			draw_rect(Rect2(pos, Vector2(2, 2) * (2.0 if rng.randf() < 0.08 else 1.0)), Color(1, 1, 0.95, a))
 		var veil := 1.0 - 0.85 * rain
 		if rain >= 1.0:
 			return
-		var c: Vector2 = preset.sun_pos * VIEW
+		var c: Vector2 = preset.sun_pos * Backdrop.VIEW
 		var r: float = preset.sun_r
 		var col: Color = preset.sun
 		for k in [3.2, 2.2, 1.5]:
@@ -223,7 +224,7 @@ class Haze extends Node2D:
 		var top := GROUND_Y - 260.0
 		var clear := Color(color, 0.0)
 		var fog := Color(color, strength)
-		draw_polygon(PackedVector2Array([Vector2(0, top), Vector2(VIEW.x, top), Vector2(VIEW.x, GROUND_Y),
+		draw_polygon(PackedVector2Array([Vector2(0, top), Vector2(Backdrop.VIEW.x, top), Vector2(Backdrop.VIEW.x, GROUND_Y),
 			Vector2(0, GROUND_Y)]), PackedColorArray([clear, clear, fog, fog]))
 
 
@@ -247,7 +248,7 @@ class Skyline extends Node2D:
 		var off: float = cam_x * cfg.factor
 		position.x = -roundf(off)
 		var first := int(floorf(off / CHUNK)) - 1
-		var last := int(floorf((off + VIEW.x) / CHUNK))
+		var last := int(floorf((off + Backdrop.VIEW.x) / CHUNK))
 		for i in range(first, last + 1):
 			if not _chunks.has(i):
 				var c := Chunk.new()

@@ -81,13 +81,13 @@ func update(delta: float, cam_x: float, scroll_speed: float, runner_x: float, di
 	while cam_x >= _next_person_x:
 		_next_person_x += _rng.randf_range(person_gap_min, person_gap_max) / TimeOfDay.p().traffic
 		_meets = _meets.filter(func(m: float) -> bool: return m > runner_x - 1500.0)
-		_spawn_person(cam_x + spawn_ahead, scroll_speed, runner_x, _rained_off(cam_x + spawn_ahead))
+		_spawn_person(cam_x + _ahead(), scroll_speed, runner_x, _rained_off(cam_x + _ahead()))
 
 
 func _spawn_attempt(cam_x: float, s: float, runner_x: float, distance_m: float) -> void:
 	var dens: float = maxf(1.0 - density_per_meter * distance_m, min_density) / TimeOfDay.p().traffic
 	_next_x += _rng.randf_range(gap_min, gap_max) * dens
-	var sx := cam_x + spawn_ahead
+	var sx := cam_x + _ahead()
 	_meets = _meets.filter(func(m: float) -> bool: return m > runner_x - 1500.0)
 
 	if _rng.randf() < big_chance:
@@ -150,7 +150,7 @@ func _spawn_big(sx: float, s: float, runner_x: float) -> void:
 		else:
 			vx = _rng.randf_range(truck_vx_min, truck_vx_max)
 	if vx > 0.0:
-		vx = _lane_vx(sx, blen, vx, sx - spawn_ahead, s)
+		vx = _lane_vx(sx, blen, vx, sx - _ahead(), s)
 		if is_nan(vx):
 			return
 	if not _range_ok(_meet_x(sx, vx, runner_x, s), _meet_x(sx + blen, vx, runner_x, s), min_separation):
@@ -300,3 +300,8 @@ func _spawn_person(sx: float, s: float, runner_x: float, rained_off := false) ->
 			ped.free()
 			continue
 		add_child(ped)
+
+
+## Spawn x right of the camera's left edge: further out on wide screens so nothing pops in on screen.
+func _ahead() -> float:
+	return spawn_ahead + View.extra()

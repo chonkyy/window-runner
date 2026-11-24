@@ -19,6 +19,7 @@ static var fullscreen := false
 static var vsync := true
 static var shake := true                   ## camera shake on slices / hits
 static var flashes := true                 ## full-screen flashes (electrocution, lightning)
+static var touch_hint_seen := false        ## TouchControls' first-run controls hint has been shown
 static var _loaded := false
 static var _best := -1                     ## cached best score, -1 = not read yet
 
@@ -37,6 +38,7 @@ static func load_all() -> void:
 	vsync = cfg.get_value("video", "vsync", vsync)
 	shake = cfg.get_value("game", "shake", shake)
 	flashes = cfg.get_value("game", "flashes", flashes)
+	touch_hint_seen = cfg.get_value("game", "touch_hint_seen", touch_hint_seen)
 
 
 static func save() -> void:
@@ -49,12 +51,14 @@ static func save() -> void:
 	cfg.set_value("video", "vsync", vsync)
 	cfg.set_value("game", "shake", shake)
 	cfg.set_value("game", "flashes", flashes)
+	cfg.set_value("game", "touch_hint_seen", touch_hint_seen)
 	cfg.save(FILE)
 
 
-## Window mode, vsync and bus volumes. Headless / embedded runs skip the window part.
+## Window mode, vsync and bus volumes. Headless / web / phone runs skip the window part (a phone is always
+## fullscreen; setting WINDOWED there would bring the system bars back).
 static func apply() -> void:
-	if DisplayServer.get_name() != "headless" and not OS.has_feature("web"):
+	if DisplayServer.get_name() != "headless" and not OS.has_feature("web") and not OS.has_feature("mobile"):
 		var want := DisplayServer.WINDOW_MODE_FULLSCREEN if fullscreen else DisplayServer.WINDOW_MODE_WINDOWED
 		if DisplayServer.window_get_mode() != want and (fullscreen or \
 				DisplayServer.window_get_mode() == DisplayServer.WINDOW_MODE_FULLSCREEN):

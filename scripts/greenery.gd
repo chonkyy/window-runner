@@ -30,7 +30,7 @@ func base_y() -> float:
 
 func scroll(cam_x: float) -> void:
 	var first := int(floorf((cam_x - 120.0) / span))
-	var last := int(floorf((cam_x + 1400.0) / span))
+	var last := int(floorf((cam_x + 120.0 + View.w()) / span))
 	for i in range(first, last + 1):
 		if not _chunks.has(i):
 			var c := Chunk.new()

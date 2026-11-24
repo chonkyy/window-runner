@@ -48,7 +48,7 @@ static func _read_args() -> void:
 
 # --- screen-space rain (instance) ---
 
-const VIEW := Vector2(1280, 720)
+static var VIEW := View.BASE                ## screen size, set in _ready (View.size())
 const FALL := Vector2(900.0, 1350.0)      ## streak fall speed range, px/s
 const WIND := -70.0                       ## px/s sideways drift on top of the scroll
 const STREAKS := [0, 80, 230]             ## per level
@@ -61,6 +61,7 @@ var _fx: RainFx
 
 
 func _ready() -> void:
+	VIEW = View.size()
 	layer = 2
 	_fx = RainFx.new()
 	_fx.owner_w = self
@@ -91,11 +92,11 @@ class RainFx extends Node2D:
 
 	func _new_drop(anywhere: bool) -> Array:
 		var depth := _rng.randf()
-		var y := _rng.randf_range(-40.0, VIEW.y) if anywhere else _rng.randf_range(-120.0, -20.0)
+		var y := _rng.randf_range(-40.0, Weather.VIEW.y) if anywhere else _rng.randf_range(-120.0, -20.0)
 		# far drops die somewhere over the backdrop, near ones on the road (splash)
 		var end_y := _rng.randf_range(200.0, owner_w.floor_y) if depth < 0.45 \
-			else _rng.randf_range(owner_w.floor_y - 6.0, VIEW.y)
-		return [Vector2(_rng.randf_range(-60.0, VIEW.x + 260.0), y), _rng.randf_range(FALL.x, FALL.y) * (0.75 + 0.25 * depth),
+			else _rng.randf_range(owner_w.floor_y - 6.0, Weather.VIEW.y)
+		return [Vector2(_rng.randf_range(-60.0, Weather.VIEW.x + 260.0), y), _rng.randf_range(FALL.x, FALL.y) * (0.75 + 0.25 * depth),
 			depth, end_y]
 
 	func _vel(d: Array) -> Vector2:
@@ -120,7 +121,7 @@ class RainFx extends Node2D:
 			if not cars.is_empty():
 				var c: Car = cars[_rng.randi() % cars.size()]
 				var x := _rng.randf_range(c.x_min(), c.x_max()) - owner_w.cam_x
-				if x > 0.0 and x < VIEW.x:
+				if x > 0.0 and x < Weather.VIEW.x:
 					_splashes.append([Vector2(x, c.roof_y()).snapped(Vector2(2, 2)), 0.0, 1.4])
 		var i := _splashes.size() - 1
 		while i >= 0:
@@ -167,4 +168,4 @@ class RainFx extends Node2D:
 			if k < 0.4:
 				draw_rect(Rect2(p + Vector2(-w, -2.0), Vector2(w * 2.0, 2.0)), c)
 		if _flash > 0.0 and Settings.flashes:
-			draw_rect(Rect2(Vector2.ZERO, VIEW), Color(0.85, 0.9, 1.0, 0.13 * _flash))
+			draw_rect(Rect2(Vector2.ZERO, Weather.VIEW), Color(0.85, 0.9, 1.0, 0.13 * _flash))

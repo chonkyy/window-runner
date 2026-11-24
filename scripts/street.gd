@@ -39,13 +39,15 @@ var _t := 0.0
 ## The static road (sidewalk, asphalt, decals, dashes) is painted in world x over [x, y), well past the
 ## screen, and only repainted when the view leaves it; the lamps live on their own layer (`_lamp_art`)
 ## that repaints only when a lamp's look changes.
-const PAINT_AHEAD := 1280.0
+static var PAINT_AHEAD := View.BASE.x      ## set in _ready: View.w()
 var _painted := Vector2(INF, -INF)
 var _lamp_art: Node2D
 var _lamp_key: Array = []
 
 
 func _ready() -> void:
+	PAINT_AHEAD = View.w()
+	VIEW_W = 140.0 + View.w()
 	var p := TimeOfDay.p()
 	_lamp_energy = p.lamps
 	_phase = TimeOfDay.phase()
@@ -97,8 +99,8 @@ func _process(delta: float) -> void:
 				if flicker else -80.0
 	_place_lights()
 	var left := _view_left()
-	if left < _painted.x or left + VIEW_W > _painted.y:
-		_painted = Vector2(left, left + VIEW_W + PAINT_AHEAD)
+	if left < _painted.x or left + Street.VIEW_W > _painted.y:
+		_painted = Vector2(left, left + Street.VIEW_W + PAINT_AHEAD)
 		queue_redraw()
 	var key := _lamp_state(left)
 	if key != _lamp_key:
@@ -106,7 +108,7 @@ func _process(delta: float) -> void:
 		_lamp_art.queue_redraw()
 
 
-const VIEW_W := 1420.0                    ## painted width around the view (screen + margins)
+static var VIEW_W := 140.0 + View.BASE.x   ## painted width around the view (screen + margins), set in _ready
 
 
 func _view_left() -> float:
@@ -117,7 +119,7 @@ func _view_left() -> float:
 func _lamp_state(left: float) -> Array:
 	var s := []
 	var k := int(floorf((left - LAMP_OFFSET - 40.0) / LAMP_SPACING))
-	while LAMP_OFFSET + k * LAMP_SPACING < left + VIEW_W + 40.0:
+	while LAMP_OFFSET + k * LAMP_SPACING < left + Street.VIEW_W + 40.0:
 		s.append_array([k, PixelArt.snap(sin(_bump(k) * PI) * 6.0), _lamp_energy * _lamp_level(k), _fault(k)])
 		k += 1
 	return s
@@ -250,7 +252,7 @@ class LampArt extends Node2D:
 		var left := street._view_left()
 		var top := street.floor_y - 8.0
 		var k := int(floorf((left - LAMP_OFFSET - 40.0) / LAMP_SPACING))
-		while LAMP_OFFSET + k * LAMP_SPACING < left + VIEW_W + 40.0:
+		while LAMP_OFFSET + k * LAMP_SPACING < left + Street.VIEW_W + 40.0:
 			street._draw_lamp(self, k, top)
 			k += 1
 

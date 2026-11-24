@@ -363,7 +363,7 @@ func _init() -> void:
 	Settings.load_all()
 	load_levels()
 	_setup_buses()
-	if OS.is_debug_build():
+	if OS.is_debug_build() and not OS.has_feature("mobile"):   # dashboard link (desktop tool only)
 		_link = PacketPeerUDP.new()
 		if _link.bind(LINK_PORT, "127.0.0.1") != OK:   # another game already has it
 			_link = null

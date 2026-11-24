@@ -77,10 +77,13 @@ func _ready() -> void:
 			if a.begins_with("--bench="):
 				_bench_len = float(a.trim_prefix("--bench="))
 	Runner.immortal = bench
+	View.setup(get_window())                    # phones: wide screens show more road (View.w() > 1280)
 	if bench:
 		seed(_round_seed() ^ 0x5bd1e995)        # global rng too (car models, colours, jitter) -> repeatable frames
 		get_window().content_scale_mode = Window.CONTENT_SCALE_MODE_VIEWPORT   # render 1280x720 whatever the WM does
+		get_window().content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
 	_setup_input()
+	TouchControls.setup()
 	PixelArt.warm_wheels()                      # once per launch (cached): no hitch when the first car shows up
 	if OS.has_feature("mobile"):
 		Engine.max_fps = 60                     # phones: no point drawing faster than the game moves (battery, heat)
@@ -168,6 +171,10 @@ func _ready() -> void:
 	cabin.restart_requested.connect(_restart)
 	cabin.menu_requested.connect(_to_menu)
 	add_child(cabin)
+	if TouchControls.enabled:
+		var touch := TouchControls.new()
+		touch.game = self
+		add_child(touch)
 	if cabin.pre_play():                        # camera starts in the wire-only lead-in at negative x
 		runner.visible = false
 		score_label.modulate.a = 0.0
@@ -177,7 +184,7 @@ func _ready() -> void:
 			cam_x = _menu_top() - gen.span - base_speed * Cabin.EXTERIOR_TIME
 	_view_x = cam_x
 
-	gen.update_spans(cam_x, cam_x + 1280.0)
+	gen.update_spans(cam_x, cam_x + View.w())
 	if bench:
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		set_process(true)
@@ -290,14 +297,14 @@ func _scroll_world(delta: float) -> void:
 	_view_x += scroll_speed * delta
 	cam.position = Vector2(cam_x, 0)
 	street.cam_x = cam_x
-	backdrop.scroll(_view_x, cam_x + 640.0)
+	backdrop.scroll(_view_x, cam_x + View.w() / 2.0)
 	greenery.scroll(cam_x)
 	if weather:
 		weather.cam_x = cam_x
 		weather.scroll_speed = scroll_speed
 	_biome_ambience()
 	_reflection_mat.set_shader_parameter("world_x", cam_x)
-	gen.update_spans(cam_x - 100.0, cam_x + 1380.0)
+	gen.update_spans(cam_x - 100.0, cam_x + View.w() + 100.0)
 	traffic.update(delta, cam_x, scroll_speed, cam_x + runner.screen_target, distance)
 	var gust := clampf((scroll_speed - 380.0) / 470.0, 0.0, 1.0)  # wind past the window grows with speed
 	Sound.loop("amb_wind", 0.25 + 0.5 * gust, 0.85 + 0.35 * gust, "World", 1.5)
@@ -307,7 +314,7 @@ func _scroll_world(delta: float) -> void:
 ## and songbirds in the suburbs; birds go quiet in the rain. Indexed by Biome.Kind.
 func _biome_ambience() -> void:
 	var p := TimeOfDay.p()
-	var x := cam_x + 640.0
+	var x := cam_x + View.w() / 2.0
 	Sound.loop("amb_city", p.city * Biome.mix(x, [1.0, 0.6]), 1.0, "World", 0.4)
 	Sound.loop("amb_crickets", p.crickets * Biome.mix(x, [1.0, 1.4]), 1.0, "World", 0.4)
 	Sound.set_chirps(p.chirps * Biome.mix(x, [1.0, 1.4]) * (1.0 - 0.75 * Weather.rain))
@@ -548,7 +555,7 @@ func _build_reflection(floor_y: float, tod: Dictionary) -> void:
 	layer.layer = 1
 	var rect := ColorRect.new()
 	rect.position = Vector2(0, floor_y)
-	rect.size = Vector2(1280, 720 - floor_y)
+	rect.size = Vector2(View.w(), View.BASE.y - floor_y)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_reflection_mat = ShaderMaterial.new()
 	_reflection_mat.shader = load("res://shaders/reflection.gdshader")
@@ -605,10 +612,17 @@ func _unpause() -> void:
 	get_tree().paused = false
 
 
-## Window lost focus mid-run: pause so the player doesn't come back to a crash.
+## Window lost focus mid-run: pause so the player doesn't come back to a crash. Android back button (go back
+## request; project.godot has quit_on_go_back off): pause in play, a menu "back" press everywhere else.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and is_inside_tree() and cabin and _can_pause() and not bench:
 		_pause()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST and is_inside_tree() and cabin:
+		if _can_pause():
+			_pause()
+		elif not _restarting:
+			Input.action_press("menu_back")
+			get_tree().create_timer(0.1, true, false, true).timeout.connect(Input.action_release.bind("menu_back"))
 
 
 ## Mouse pointer only where there's something to click (menus), hidden during a run.
@@ -638,8 +652,9 @@ func _station_toast() -> void:
 		box.add_child(l)
 	_hud_layer.add_child(box)
 	box.reset_size()
-	var x := 1280.0 - 24.0 - box.size.x
-	box.position = Vector2(x + 40.0, 20.0)
+	var x := View.w() - 24.0 - box.size.x
+	var y := TouchControls.MARGIN + TouchControls.SMALL_BTN + 16.0 if TouchControls.enabled else 20.0
+	box.position = Vector2(x + 40.0, y)   # touch: under the PAUSE / RADIO buttons
 	box.modulate.a = 0.0
 	_toast = box
 	var tw := box.create_tween()
